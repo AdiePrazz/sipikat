@@ -34,6 +34,8 @@ if 'df_model_a' not in st.session_state:
     st.session_state.df_model_a = None
 if 'df_db_rekap' not in st.session_state:
     st.session_state.df_db_rekap = None
+if 'df_db_rekap_before' not in st.session_state:
+    st.session_state.df_db_rekap_before = None
 if 'selected_id' not in st.session_state:
     st.session_state.selected_id = None
 if 'selected_label' not in st.session_state:
@@ -575,10 +577,15 @@ def display_home_overview(engine):
                     mode='lines+markers+text',
                     name='Total Pemilih',
                     line=dict(color='#A72703', width=3),
-                    marker=dict(size=10),
+                    marker=dict(size=15, color='#A72703'),
                     text=df_yearly['total_pemilih'][::-1],
                     texttemplate='%{text:,.0f}',
-                    textposition='top center'
+                    textposition='top center',
+                    textfont=dict(
+                        size=13,                        # Lebih besar
+                        color='#333333',                # Abu gelap (kontras)
+                        family='Arial, sans-serif'      # Font jelas
+                    )
                 ))
                 
                 fig_trend.update_layout(
@@ -606,7 +613,12 @@ def display_home_overview(engine):
                 fig_gender_latest.update_layout(
                     title=f'Distribusi Gender Pemilih<br>Triwulan {latest_data["triwulan_ke"]} tahun {latest_data["tahun"]}',
                     height=400,
-                    showlegend=True
+                    showlegend=True,
+                    font=dict(
+                        family='Arial, sans-serif',
+                        size=14,
+                        color='white'
+                    )
                 )
                 st.plotly_chart(fig_gender_latest, use_container_width=True)
                 st.caption("Grafik perbandingan total pemilih laki-laki & perempuan pada Kabupaten Malang.")
@@ -741,11 +753,25 @@ def reset_triwulan_data():
     st.session_state.selected_id = None
     
 # --- Homepage ---
-st.set_page_config(page_title="Dashboard Infografis PDPB KPU Kabupaten Malang", layout="wide")
-st.header("Infografis PDPB KPU Kabupaten Malang")
-st.markdown("---")
+st.set_page_config(page_title="SIPIKAT - Sistem Infografis Pemilih Kabupaten Malang", layout="wide")
+# st.header("Infografis PDPB KPU Kabupaten Malang")
+# st.markdown("---")
 
 # --- Sidebar ---
+st.sidebar.markdown(
+    """
+    <style>
+    /* Center align logo */
+    [data-testid="stSidebar"] img {
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+st.sidebar.image("sipikat_logo.png", width=200)
 st.sidebar.write(f"<span style='font-weight:bold;'>TAMPILAN</span>", unsafe_allow_html=True)
 # engine = create_engine(f'postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}')
 # st.sidebar.markdown("### 📅 Pilih Data Triwulan")
@@ -836,11 +862,29 @@ try:
                                 conn, 
                                 params={"id": prev_id}
                             )
+                            
+                             # Query data TMS triwulan sebelumnya untuk delta
+                            st.session_state.df_db_rekap_before = pd.read_sql(
+                                text("""
+                                    SELECT 
+                                        nama_kecamatan,
+                                        tms_meninggal_l, tms_meninggal_p,
+                                        tms_dibawah_umur_l, tms_dibawah_umur_p,
+                                        tms_ganda_l, tms_ganda_p,
+                                        tms_pindah_keluar_l, tms_pindah_keluar_p,
+                                        tms_tni_l, tms_tni_p
+                                    FROM db_rekap_model_a 
+                                    WHERE id_triwulan = :id
+                                """),
+                                conn,
+                                params={"id": prev_id}
+                            )
                         else:
                             # Tidak ada triwulan sebelumnya - buat dataframe kosong
                             st.session_state.df_pdpb_before = pd.DataFrame(columns=[
                                 'nama_kecamatan', 'jumlah_tps', 'laki', 'perempuan', 'total'
                             ])
+                            st.session_state.df_db_rekap_before = pd.DataFrame()
                     
                     st.session_state.df_pdpb = pd.read_sql(
                         text("SELECT nama_kecamatan,jumlah_desa_kel,jumlah_pemilih_laki,jumlah_pemilih_perempuan,total_pemilih FROM rekapitulasi_pdpb WHERE id_triwulan = :id"),
@@ -868,6 +912,7 @@ try:
             df_pdpb_before = st.session_state.df_pdpb_before
             df_model_a = st.session_state.df_model_a
             df_db_rekap = st.session_state.df_db_rekap
+            df_db_rekap_before = st.session_state.df_db_rekap_before if st.session_state.df_db_rekap_before is not None else pd.DataFrame()
             
             #--- CHART ATAS  ---
             st.markdown(f"<h2 style='text-align: center;'>Data {selected_label}</h2>", unsafe_allow_html=True)
@@ -1075,7 +1120,12 @@ try:
                         )])
                         fig_gender.update_layout(
                             title='Distribusi Gender',
-                            height=400
+                            height=400,
+                            font=dict(
+                                family='Arial, sans-serif',
+                                size=14,
+                                color='#333333'
+                            )
                         )
                         st.plotly_chart(fig_gender, use_container_width=True)
                 
@@ -1345,7 +1395,13 @@ try:
                                 hole=.4,
                                 marker_colors=colors,
                                 textposition='inside',
-                                textinfo='percent+label'
+                                textinfo='percent+label',
+                                textfont=dict(
+                                    size=16,                        # ← Lebih besar (dari 12 ke 16)
+                                    color='white',                  # ← Putih (kontras dengan warna pie)
+                                    family='Arial, sans-serif'      # ← Font yang jelas
+                                ),
+                                insidetextorientation='radial'
                             )])
                             
                             fig_pie.update_layout(
@@ -1688,7 +1744,32 @@ try:
                         color_discrete_sequence=["#ff595e", "#ff924c", "#ffca3a", "#8ac926", "#1982c4"],
                         hole=0.4
                         )
-                    fig2.update_layout(paper_bgcolor="#ffffff")
+                    fig2.update_traces(
+                        textposition='inside',
+                        textinfo='percent',        # Tampilkan % + label
+                        textfont=dict(
+                            size=16,                      # Font besar
+                            color='white',                # Putih (kontras)
+                            family='Arial, sans-serif'
+                        ),
+                        insidetextorientation='radial'    # Text radial
+                    )
+                    fig2.update_layout(
+                        paper_bgcolor="#ffffff",
+                        showlegend=True,
+                        legend=dict(
+                            font=dict(
+                                size=14,
+                                color='#333333',
+                                family='Arial, sans-serif'
+                            )
+                        ),
+                        font=dict(
+                            family='Arial, sans-serif',
+                            size=14,
+                            color='#333333'
+                        )
+                    )
                     st.plotly_chart(fig2, use_container_width=True)
             with funnel_tms:
                 with st.container(border=True):    
@@ -1702,10 +1783,30 @@ try:
                         color_discrete_sequence=["#ff595e", "#ff924c", "#ffca3a", "#8ac926", "#1982c4"]
                     )
                     fig_funnel.update_traces(
-                        textinfo="value",           # Tampilkan angka, bukan persen
-                        textfont=dict(size=17)
+                        textinfo="value",          # Angka + label
+                        textfont=dict(
+                            size=18,                      # Font lebih besar
+                            color='white',                # Putih (kontras)
+                            family='Arial, sans-serif'
+                        ),
+                        textposition='inside'
                     )
-                    fig_funnel.update_layout(paper_bgcolor="#ffffff")
+                    fig_funnel.update_layout(
+                        paper_bgcolor="#ffffff",
+                        showlegend=True,
+                        legend=dict(
+                            font=dict(
+                                size=14,
+                                color='#333333',
+                                family='Arial, sans-serif'
+                            )
+                        ),
+                        font=dict(
+                            family='Arial, sans-serif',
+                            size=14,
+                            color='#333333'
+                        )
+                    )
                     st.plotly_chart(fig_funnel, use_container_width=True)
             
             col_detail_tms_1, col_detail_tms_2 ,col_detail_tms_3, col_detail_tms_4, col_detail_tms_5, col_detail_tms_6 = st.columns([1,1,1,1,1,2])
@@ -1713,34 +1814,93 @@ try:
             # Gunakan filtered jika tidak kosong
             df_db_rekap_display = df_db_rekap_filtered if not df_db_rekap_filtered.empty else df_db_rekap
             
+            # Hitung data TMS triwulan sebelumnya untuk delta
+            if not df_db_rekap_before.empty:
+                prev_pindah = df_db_rekap_before['tms_pindah_keluar_l'].sum() + df_db_rekap_before['tms_pindah_keluar_p'].sum()
+                prev_ganda = df_db_rekap_before['tms_ganda_l'].sum() + df_db_rekap_before['tms_ganda_p'].sum()
+                prev_dibawah_umur = df_db_rekap_before['tms_dibawah_umur_l'].sum() + df_db_rekap_before['tms_dibawah_umur_p'].sum()
+                prev_meninggal = df_db_rekap_before['tms_meninggal_l'].sum() + df_db_rekap_before['tms_meninggal_p'].sum()
+                prev_tni = df_db_rekap_before['tms_tni_l'].sum() + df_db_rekap_before['tms_tni_p'].sum()
+            else:
+                prev_pindah = prev_ganda = prev_dibawah_umur = prev_meninggal = prev_tni = 0
+            
             with col_detail_tms_1:
                 with st.container(border=True):
                     pindah_keluar_l = df_db_rekap_display['tms_pindah_keluar_l'].sum()
                     pindah_keluar_p = df_db_rekap_display['tms_pindah_keluar_p'].sum()
-                    st.metric("🚚 Pindah Keluar", f"{int(pindah_keluar_l+pindah_keluar_p):,}".replace(",", "."))
+                    curr_pindah = int(pindah_keluar_l + pindah_keluar_p)
+                    delta_pindah = curr_pindah - prev_pindah
+                    
+                    st.metric(
+                        "🚚 Pindah Keluar", 
+                        f"{curr_pindah:,}".replace(",", "."),
+                        delta=f"{delta_pindah:+,}".replace(",", ".") if prev_pindah > 0 else None,
+                        delta_color="inverse"
+                    )
             with col_detail_tms_2:
                 with st.container(border=True):
                     ganda_l = df_db_rekap_display['tms_ganda_l'].sum()
                     ganda_p = df_db_rekap_display['tms_ganda_p'].sum()
-                    st.metric("🧍‍♂️ Ganda", f"{int(ganda_l+ganda_p):,}".replace(",", "."))
+                    curr_ganda = int(ganda_l + ganda_p)
+                    delta_ganda = curr_ganda - prev_ganda
+                    
+                    st.metric(
+                        "🧍‍♂️ Ganda", 
+                        f"{curr_ganda:,}".replace(",", "."),
+                        delta=f"{delta_ganda:+,}".replace(",", ".") if prev_ganda > 0 else None,
+                        delta_color="inverse"
+                    )
             with col_detail_tms_3:
                 with st.container(border=True):
                     dibawah_umur_l = df_db_rekap_display['tms_dibawah_umur_l'].sum()
                     dibawah_umur_p = df_db_rekap_display['tms_dibawah_umur_p'].sum()
-                    st.metric("👶 Di Bawah Umur", f"{int(dibawah_umur_l+dibawah_umur_p):,}".replace(",", "."))
+                    curr_dibawah = int(dibawah_umur_l + dibawah_umur_p)
+                    delta_dibawah = curr_dibawah - prev_dibawah_umur
+                    
+                    st.metric(
+                        "👶 Di Bawah Umur", 
+                        f"{curr_dibawah:,}".replace(",", "."),
+                        delta=f"{delta_dibawah:+,}".replace(",", ".") if prev_dibawah_umur > 0 else None,
+                        delta_color="inverse"
+                    )
             with col_detail_tms_4:
                 with st.container(border=True):
                     meninggal_l = df_db_rekap_display['tms_meninggal_l'].sum()
                     meninggal_p = df_db_rekap_display['tms_meninggal_p'].sum()
-                    st.metric("☠️ Meninggal", f"{int(meninggal_l+meninggal_p):,}".replace(",", "."))
+                    curr_meninggal = int(meninggal_l + meninggal_p)
+                    delta_meninggal = curr_meninggal - prev_meninggal
+                    
+                    st.metric(
+                        "☠️ Meninggal", 
+                        f"{curr_meninggal:,}".replace(",", "."),
+                        delta=f"{delta_meninggal:+,}".replace(",", ".") if prev_meninggal > 0 else None,
+                        delta_color="inverse"
+                    )
             with col_detail_tms_5:
                 with st.container(border=True):
                     tni_l = df_db_rekap_display['tms_tni_l'].sum()
                     tni_p = df_db_rekap_display['tms_tni_p'].sum()
-                    st.metric("🎖️ TNI", f"{int(tni_l+tni_p):,}".replace(",", "."))
+                    curr_tni = int(tni_l + tni_p)
+                    delta_tni = curr_tni - prev_tni
+                    
+                    st.metric(
+                        "🎖️ TNI", 
+                        f"{curr_tni:,}".replace(",", "."),
+                        delta=f"{delta_tni:+,}".replace(",", ".") if prev_tni > 0 else None,
+                        delta_color="inverse"
+                    )
             with col_detail_tms_6:
                 with st.container(border=True):
-                    st.metric("Total TMS", f"{int(total_meninggal+total_dibawah+total_ganda+total_pindah+total_tni):,}".replace(",", "."))
+                    total_tms_curr = curr_pindah + curr_ganda + curr_dibawah + curr_meninggal + curr_tni
+                    total_tms_prev = prev_pindah + prev_ganda + prev_dibawah_umur + prev_meninggal + prev_tni
+                    delta_total_tms = total_tms_curr - total_tms_prev
+                    
+                    st.metric(
+                        "Total TMS", 
+                        f"{total_tms_curr:,}".replace(",", "."),
+                        delta=f"{delta_total_tms:+,}".replace(",", ".") if total_tms_prev > 0 else None,
+                        delta_color="inverse"
+                    )
             
             # with st.expander("📋 Data PDPB Triwulan Sebelumnya", expanded=False):
             #     st.subheader("Data PDPB Triwulan Sebelumnya")
