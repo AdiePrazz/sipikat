@@ -958,12 +958,12 @@ try:
                     df_pdpb_before_filtered = df_pdpb_before[df_pdpb_before['nama_kecamatan_norm'] == selected_kecamatan_norm]
                     
                     # Debug info
-                    # st.info(f"📍 Menampilkan data untuk **{selected_kecamatan}**")
+                    st.info(f"📍 Menampilkan data untuk **{selected_kecamatan}**")
                     # with st.expander("🔍 Debug Info"):
                     #     st.write(f"Kecamatan dipilih (normalized): {selected_kecamatan_norm}")
-                    #     st.write(f"df_pdpb_filtered: {len(df_pdpb_filtered)} rows")
-                    #     st.write(f"df_model_a_filtered: {len(df_model_a_filtered)} rows")
-                    #     st.write(f"df_db_rekap_filtered: {len(df_db_rekap_filtered)} rows")
+                    #     # st.write(f"df_pdpb_filtered: {len(df_pdpb_filtered)} rows")
+                    #     # st.write(f"df_model_a_filtered: {len(df_model_a_filtered)} rows")
+                    #     # st.write(f"df_db_rekap_filtered: {len(df_db_rekap_filtered)} rows")
                     #     if len(df_model_a_filtered) == 0:
                     #         st.warning("⚠️ Model A filtered kosong!")
                     #         st.write("Kecamatan di df_model_a:", df_model_a['nama_kecamatan'].unique()[:5].tolist())
@@ -1100,7 +1100,7 @@ try:
                     )
                     fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
                     fig.update_layout(
-                        xaxis_tickangle=-45,
+                        xaxis_tickangle=-90,
                         showlegend=False,
                         height=400
                     )
@@ -1151,7 +1151,7 @@ try:
                         
                         fig_gender_compare.update_layout(
                             barmode='group',
-                            xaxis_tickangle=-45,
+                            xaxis_tickangle=0,
                             yaxis_title='Jumlah Pemilih',
                             height=400
                         )
@@ -1347,7 +1347,7 @@ try:
                             
                             fig_stacked.update_layout(
                                 barmode='stack',
-                                xaxis_tickangle=-45,
+                                xaxis_tickangle=-90,
                                 yaxis_title='Jumlah Pemilih',
                                 height=450,
                                 legend=dict(
@@ -1455,7 +1455,7 @@ try:
                                 
                                 fig_compare.update_layout(
                                     barmode='group',
-                                    xaxis_tickangle=-45,
+                                    xaxis_tickangle=0,
                                     yaxis_title='Jumlah Pemilih',
                                     height=450,
                                     legend=dict(
@@ -1708,8 +1708,7 @@ try:
                         xaxis_title=None, 
                         yaxis_title=None,
                         plot_bgcolor="#ffffff",
-                        paper_bgcolor="#ffffff",
-                        xaxis_tickangle=-45 
+                        paper_bgcolor="#ffffff"
                     )
                     
                     st.plotly_chart(fig_detail, use_container_width=True)
