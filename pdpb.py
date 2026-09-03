@@ -298,12 +298,14 @@ def clean_and_map_disabilitas(df):
     df_final = df_renamed[[col for col in final_columns if col in df_renamed.columns]]
     
     # 6. Convert ke numeric
-    # Convert ke numeric
     numeric_cols = [col for col in final_columns if col != 'nama_kecamatan']
     for col in numeric_cols:
         if col in df_final.columns:
             df_final[col] = pd.to_numeric(df_final[col], errors='coerce').fillna(0).astype(int)
-    
+
+    # 6b. Hitung total_disabilitas (kolom ini WAJIB diisi manual - bukan generated column di DB)
+    df_final['total_disabilitas'] = df_final[numeric_cols].sum(axis=1)
+
     # 7. Clean nama kecamatan
     df_final['nama_kecamatan'] = df_final['nama_kecamatan'].str.strip().str.upper()
     
@@ -312,7 +314,20 @@ def clean_and_map_disabilitas(df):
     
     # 9. Reset index
     df_final = df_final.reset_index(drop=True)
-    
+
+    # 10. Jaga-jaga: kalau ada kecamatan yang muncul lebih dari sekali di sheet
+    # sumbernya (baris ke-copy tanpa sengaja), jangan sampai ikut ter-double
+    # count. Sisakan kemunculan pertama saja dan beri tahu penggunanya.
+    dup_mask = df_final['nama_kecamatan'].duplicated(keep=False)
+    if dup_mask.any():
+        dup_names = sorted(df_final.loc[dup_mask, 'nama_kecamatan'].unique().tolist())
+        st.warning(
+            f"⚠️ Kecamatan berikut muncul lebih dari sekali di sheet SIDALIH WEB dan sudah "
+            f"otomatis di-dedup (hanya baris pertama yang disimpan): {', '.join(dup_names)}. "
+            f"Mohon cek ulang sheet aslinya."
+        )
+        df_final = df_final.drop_duplicates(subset='nama_kecamatan', keep='first').reset_index(drop=True)
+
     return df_final
 
 def display_home_overview(engine):
