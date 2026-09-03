@@ -232,9 +232,9 @@ def clean_and_map_db_rekap_model_a(df):
     return final_df
 
 def clean_and_map_pdpb_t2(df):
-    # Hapus baris total 'JUMLAH' (berdasarkan kolom pertama)
+    # Hapus baris total 'JUMLAH' (berdasarkan kolom pertama, sebelum rename)
     df = df[~df.iloc[:, 0].astype(str).str.contains('JUMLAH', na=False, case=False)]
-    
+
     column_mapping = {
         'No.': 'no',
         'MALANG': 'nama_kecamatan',
@@ -244,11 +244,17 @@ def clean_and_map_pdpb_t2(df):
         'L + P': 'total_pemilih'
     }
     df.rename(columns=column_mapping, inplace=True)
-    
+
     final_columns = ['nama_kecamatan', 'jumlah_tps', 'laki', 'perempuan']
     df_final = df[[col for col in final_columns if col in df.columns]]
+    df_final = df_final.dropna(subset=['nama_kecamatan'])
 
-    return df_final.dropna(subset=['nama_kecamatan'])
+    # Jaga-jaga: sheet sumbernya kadang menaruh baris rekap total di kolom
+    # nama kecamatan (mis. 'TOTAL') dan bukan di kolom 'No.', sehingga lolos
+    # dari filter 'JUMLAH' di atas. Buang juga baris seperti itu di sini.
+    df_final = df_final[~df_final['nama_kecamatan'].astype(str).str.strip().str.upper().isin(['TOTAL', 'JUMLAH'])]
+
+    return df_final
 
 def clean_and_map_disabilitas(df):
     """
