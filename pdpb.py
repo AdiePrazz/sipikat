@@ -352,6 +352,13 @@ def display_home_overview(engine):
             
             # Merge data
             df_yearly = df_yearly.merge(df_tms, on='id_triwulan', how='left')
+
+            # Kolom hasil SUM() bisa NULL/NaN kalau triwulan belum punya data
+            # di rekapitulasi_pdpb (LEFT JOIN kosong) — isi 0 agar tidak error saat int()
+            for col in ['jumlah_kecamatan', 'total_desa_kel', 'total_laki', 'total_perempuan', 'total_pemilih']:
+                if col in df_yearly.columns:
+                    df_yearly[col] = df_yearly[col].fillna(0)
+
             df_yearly['total_tms'] = (
                 df_yearly['total_meninggal'].fillna(0) +
                 df_yearly['total_dibawah_umur'].fillna(0) +
