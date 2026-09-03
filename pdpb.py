@@ -786,7 +786,9 @@ try:
                         """), conn, params={"current_id": selected_id})
                         
                         if not df_prev_id.empty:
-                            prev_id = df_prev_id.iloc[0]['id_triwulan']
+                            # Konversi ke int Python biasa - nilai dari pandas/numpy
+                            # (numpy.int64) tidak bisa langsung dipakai sebagai parameter SQL
+                            prev_id = int(df_prev_id.iloc[0]['id_triwulan'])
                             st.session_state.df_pdpb_before = pd.read_sql(
                                 text("""
                                     SELECT 
