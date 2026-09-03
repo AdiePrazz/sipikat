@@ -156,7 +156,26 @@ def insert_or_get_triwulan_id(engine, triwulan_data):
     except SQLAlchemyError as e:
         st.error(f"❌ Kesalahan Database saat memproses Triwulan: {e}")
         return None
-    
+
+
+def get_previous_triwulan_id(conn, id_triwulan):
+    """
+    Cari id_triwulan sebelumnya secara kronologis berdasarkan tahun & triwulan_ke
+    (otomatis 'mundur' ke Triwulan 4 tahun sebelumnya kalau triwulan saat ini
+    adalah Triwulan 1). Return None kalau tidak ada triwulan sebelumnya.
+    """
+    row = conn.execute(text("""
+        SELECT t1.id_triwulan
+        FROM triwulan t1
+        JOIN triwulan t2 ON t2.id_triwulan = :id
+        WHERE (t1.tahun < t2.tahun)
+           OR (t1.tahun = t2.tahun AND t1.triwulan_ke < t2.triwulan_ke)
+        ORDER BY t1.tahun DESC, t1.triwulan_ke DESC
+        LIMIT 1
+    """), {"id": id_triwulan}).fetchone()
+    return int(row[0]) if row else None
+
+
 def clean_and_map_rekapitulasi_pdpb(df):
     df = df[~df['No.'].astype(str).str.contains('JUMLAH', na=False, case=False)]
     column_mapping = {
@@ -786,68 +805,50 @@ try:
         if st.sidebar.button("📊 Tampilkan Data") or st.session_state.data_loaded:
             if not st.session_state.data_loaded or st.session_state.selected_id != selected_id:
                 with engine.connect() as conn:
-                    # Load data triwulan sebelumnya
-                    st.session_state.df_pdpb_before = pd.read_sql(
-                        text("SELECT nama_kecamatan,jumlah_tps,laki,perempuan,total FROM triwulan_sebelumnya WHERE id_triwulan = :id"),
-                        conn, 
-                        params={"id": selected_id}
-                    )
-                    
-                    # Fallback: Jika tabel triwulan_sebelumnya kosong, ambil dari rekapitulasi_pdpb triwulan sebelumnya
-                    if st.session_state.df_pdpb_before.empty:
-                        # Cari id_triwulan sebelumnya
-                        df_prev_id = pd.read_sql(text("""
-                            SELECT t1.id_triwulan, t1.tahun, t1.triwulan_ke
-                            FROM triwulan t1
-                            JOIN triwulan t2 ON t2.id_triwulan = :current_id
-                            WHERE (t1.tahun < t2.tahun) 
-                               OR (t1.tahun = t2.tahun AND t1.triwulan_ke < t2.triwulan_ke)
-                            ORDER BY t1.tahun DESC, t1.triwulan_ke DESC
-                            LIMIT 1
-                        """), conn, params={"current_id": selected_id})
-                        
-                        if not df_prev_id.empty:
-                            # Konversi ke int Python biasa - nilai dari pandas/numpy
-                            # (numpy.int64) tidak bisa langsung dipakai sebagai parameter SQL
-                            prev_id = int(df_prev_id.iloc[0]['id_triwulan'])
-                            st.session_state.df_pdpb_before = pd.read_sql(
-                                text("""
-                                    SELECT 
-                                        nama_kecamatan,
-                                        0 as jumlah_tps,
-                                        jumlah_pemilih_laki as laki,
-                                        jumlah_pemilih_perempuan as perempuan,
-                                        total_pemilih as total
-                                    FROM rekapitulasi_pdpb 
-                                    WHERE id_triwulan = :id
-                                """),
-                                conn, 
-                                params={"id": prev_id}
-                            )
-                            
-                             # Query data TMS triwulan sebelumnya untuk delta
-                            st.session_state.df_db_rekap_before = pd.read_sql(
-                                text("""
-                                    SELECT 
-                                        nama_kecamatan,
-                                        tms_meninggal_l, tms_meninggal_p,
-                                        tms_dibawah_umur_l, tms_dibawah_umur_p,
-                                        tms_ganda_l, tms_ganda_p,
-                                        tms_pindah_keluar_l, tms_pindah_keluar_p,
-                                        tms_tni_l, tms_tni_p
-                                    FROM db_rekap_model_a 
-                                    WHERE id_triwulan = :id
-                                """),
-                                conn,
-                                params={"id": prev_id}
-                            )
-                        else:
-                            # Tidak ada triwulan sebelumnya - buat dataframe kosong
-                            st.session_state.df_pdpb_before = pd.DataFrame(columns=[
-                                'nama_kecamatan', 'jumlah_tps', 'laki', 'perempuan', 'total'
-                            ])
-                            st.session_state.df_db_rekap_before = pd.DataFrame()
-                    
+                    # Cari triwulan sebelumnya yang sungguhan tersimpan di database
+                    # (bukan snapshot dari sheet 'PDPB Triwulan Sebelumnya' di dalam file
+                    # Excel triwulan ini sendiri — sumber itu terbukti tidak selalu akurat).
+                    prev_id = get_previous_triwulan_id(conn, selected_id)
+
+                    if prev_id is not None:
+                        st.session_state.df_pdpb_before = pd.read_sql(
+                            text("""
+                                SELECT 
+                                    nama_kecamatan,
+                                    0 as jumlah_tps,
+                                    jumlah_pemilih_laki as laki,
+                                    jumlah_pemilih_perempuan as perempuan,
+                                    total_pemilih as total
+                                FROM rekapitulasi_pdpb 
+                                WHERE id_triwulan = :id
+                            """),
+                            conn, 
+                            params={"id": prev_id}
+                        )
+
+                        # Query data TMS triwulan sebelumnya untuk delta
+                        st.session_state.df_db_rekap_before = pd.read_sql(
+                            text("""
+                                SELECT 
+                                    nama_kecamatan,
+                                    tms_meninggal_l, tms_meninggal_p,
+                                    tms_dibawah_umur_l, tms_dibawah_umur_p,
+                                    tms_ganda_l, tms_ganda_p,
+                                    tms_pindah_keluar_l, tms_pindah_keluar_p,
+                                    tms_tni_l, tms_tni_p
+                                FROM db_rekap_model_a 
+                                WHERE id_triwulan = :id
+                            """),
+                            conn,
+                            params={"id": prev_id}
+                        )
+                    else:
+                        # Tidak ada triwulan sebelumnya - buat dataframe kosong
+                        st.session_state.df_pdpb_before = pd.DataFrame(columns=[
+                            'nama_kecamatan', 'jumlah_tps', 'laki', 'perempuan', 'total'
+                        ])
+                        st.session_state.df_db_rekap_before = pd.DataFrame()
+
                     st.session_state.df_pdpb = pd.read_sql(
                         text("SELECT nama_kecamatan,jumlah_desa_kel,jumlah_pemilih_laki,jumlah_pemilih_perempuan,total_pemilih FROM rekapitulasi_pdpb WHERE id_triwulan = :id"),
                         conn, 
@@ -1141,23 +1142,33 @@ try:
                         ORDER BY total_disabilitas DESC
                     """), conn, params={"id": selected_id})
                     
-                    # Query data disabilitas triwulan sebelumnya (untuk delta)
-                    df_disabilitas_before = pd.read_sql(text("""
-                        SELECT 
-                            UPPER(TRIM(nama_kecamatan)) as nama_kecamatan,
-                            disabilitas_fisik,
-                            disabilitas_intelektual,
-                            disabilitas_mental,
-                            disabilitas_sensorik_wicara,
-                            disabilitas_sensorik_rungu,
-                            disabilitas_sensorik_netra,
-                            total_disabilitas
-                        FROM detail_disabilitas d
-                        JOIN triwulan t ON d.id_triwulan = t.id_triwulan
-                        WHERE t.tahun = (SELECT tahun FROM triwulan WHERE id_triwulan = :id)
-                        AND t.triwulan_ke = (SELECT triwulan_ke - 1 FROM triwulan WHERE id_triwulan = :id)
-                        ORDER BY total_disabilitas DESC
-                    """), conn, params={"id": selected_id})
+                    # Query data disabilitas triwulan sebelumnya (untuk delta).
+                    # Pakai get_previous_triwulan_id supaya benar saat triwulan
+                    # saat ini adalah Triwulan 1 (harus mundur ke Triwulan 4
+                    # tahun sebelumnya, bukan 'triwulan_ke - 1' yang jadi 0).
+                    prev_id_dis = get_previous_triwulan_id(conn, selected_id)
+                    if prev_id_dis is not None:
+                        df_disabilitas_before = pd.read_sql(text("""
+                            SELECT 
+                                UPPER(TRIM(nama_kecamatan)) as nama_kecamatan,
+                                disabilitas_fisik,
+                                disabilitas_intelektual,
+                                disabilitas_mental,
+                                disabilitas_sensorik_wicara,
+                                disabilitas_sensorik_rungu,
+                                disabilitas_sensorik_netra,
+                                total_disabilitas
+                            FROM detail_disabilitas
+                            WHERE id_triwulan = :id
+                            ORDER BY total_disabilitas DESC
+                        """), conn, params={"id": prev_id_dis})
+                    else:
+                        df_disabilitas_before = pd.DataFrame(columns=[
+                            'nama_kecamatan', 'disabilitas_fisik', 'disabilitas_intelektual',
+                            'disabilitas_mental', 'disabilitas_sensorik_wicara',
+                            'disabilitas_sensorik_rungu', 'disabilitas_sensorik_netra',
+                            'total_disabilitas'
+                        ])
                 
                 if not df_disabilitas.empty:
                     # Normalisasi nama kecamatan di data filtered juga
