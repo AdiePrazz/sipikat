@@ -44,72 +44,37 @@ if 'selected_label' not in st.session_state:
 if 'view_mode' not in st.session_state:
     st.session_state.view_mode = 'home'
     
+def _simpan_tabel(conn, df, table_name, id_triwulan, label):
+    """
+    Helper: cek apakah data untuk id_triwulan ini sudah ada di table_name,
+    lalu simpan df ke sana hanya kalau belum ada (anti-duplikasi).
+    """
+    existing = pd.read_sql(
+        text(f"SELECT id_triwulan FROM {table_name} WHERE id_triwulan = :id"),
+        conn, params={"id": id_triwulan}
+    )
+    if existing.empty:
+        df.to_sql(table_name, conn, if_exists='append', index=False)
+        st.toast(f"✅ {len(df)} baris data disimpan ke `{table_name}`.")
+        st.success(f"✅ Data {label} berhasil disimpan.")
+    else:
+        st.warning(f"⚠️ Data {label} untuk triwulan ini sudah ada — tidak disimpan ulang.")
+
+
 def simpan_ke_database(engine, df_pdpb_clean, df_triwulan_sebelumnya, df_rekap_model_a, df_db_rekap_model_a, df_disabilitas_clean, id_triwulan):
+    """
+    Simpan seluruh dataframe hasil parsing Excel ke database dalam satu transaksi.
+    Setiap tabel dicek dulu (anti-duplikasi) sebelum di-insert.
+    """
     with engine.begin() as conn:
-        # --- 1️⃣ Simpan ke tabel rekapitulasi_pdpb ---
-        existing = pd.read_sql(
-            text("SELECT id_triwulan FROM rekapitulasi_pdpb WHERE id_triwulan = :id"),
-            conn, params={"id": id_triwulan}
-        )
-        if existing.empty:
-            df_pdpb_clean.to_sql('rekapitulasi_pdpb', conn, if_exists='append', index=False)
-            st.success("✅ Data rekapitulasi PDPB berhasil disimpan.")
-        else:
-            st.warning("⚠️ Data untuk triwulan ini sudah ada di tabel rekapitulasi_pdpb — tidak disimpan ulang.")
+        _simpan_tabel(conn, df_pdpb_clean, 'rekapitulasi_pdpb', id_triwulan, 'rekapitulasi PDPB')
+        _simpan_tabel(conn, df_triwulan_sebelumnya, 'triwulan_sebelumnya', id_triwulan, 'triwulan sebelumnya')
+        _simpan_tabel(conn, df_rekap_model_a, 'rekap_model_a', id_triwulan, 'rekap Model A')
+        _simpan_tabel(conn, df_db_rekap_model_a, 'db_rekap_model_a', id_triwulan, 'DB Rekap Model A')
 
-        # --- 2️⃣ Simpan ke tabel triwulan_sebelumnya ---
-        existing = pd.read_sql(
-            text("SELECT id_triwulan FROM triwulan_sebelumnya WHERE id_triwulan = :id"),
-            conn, params={"id": id_triwulan}
-        )
-        
-        if existing.empty:
-            df_pdpb_t_clean.to_sql('triwulan_sebelumnya', conn, if_exists='append', index=False)
-            st.toast(f"✅ {len(df_pdpb_t_clean)} baris data disimpan")
-        else:
-            st.warning("⚠️ Data sudah ada — tidak disimpan ulang")
-            
-        if existing.empty:
-            df_triwulan_sebelumnya.to_sql('triwulan_sebelumnya', conn, if_exists='append', index=False)
-            st.success("✅ Data triwulan sebelumnya berhasil disimpan.")
-        else:
-            st.warning("⚠️ Data triwulan sebelumnya untuk periode ini sudah ada — tidak disimpan ulang.")
-
-        # --- 3️⃣ Simpan ke tabel rekap_model_a ---
-        existing = pd.read_sql(
-            text("SELECT id_triwulan FROM rekap_model_a WHERE id_triwulan = :id"),
-            conn, params={"id": id_triwulan}
-        )
-        if existing.empty:
-            df_rekap_model_a.to_sql('rekap_model_a', conn, if_exists='append', index=False)
-            st.success("✅ Data rekap Model A berhasil disimpan.")
-        else:
-            st.warning("⚠️ Data rekap Model A untuk triwulan ini sudah ada — tidak disimpan ulang.")
-
-        # --- 4️⃣ Simpan ke tabel db_rekap_model_a ---
-        existing = pd.read_sql(
-            text("SELECT id_triwulan FROM db_rekap_model_a WHERE id_triwulan = :id"),
-            conn, params={"id": id_triwulan}
-        )
-        if existing.empty:
-            df_db_rekap_model_a.to_sql('db_rekap_model_a', conn, if_exists='append', index=False)
-            st.success("✅ Data DB Rekap Model A berhasil disimpan.")
-        else:
-            st.warning("⚠️ Data DB Rekap Model A untuk triwulan ini sudah ada — tidak disimpan ulang.")
-        
-        # --- 5️⃣ Simpan ke tabel detail_disabilitas ---
         if df_disabilitas_clean is not None and not df_disabilitas_clean.empty:
-            existing = pd.read_sql(
-                text("SELECT id_triwulan FROM detail_disabilitas WHERE id_triwulan = :id"),
-                conn, params={"id": id_triwulan}
-            )
-            if existing.empty:
-                df_disabilitas_clean['id_triwulan'] = id_triwulan
-                df_disabilitas_clean.to_sql('detail_disabilitas', conn, if_exists='append', index=False)
-                st.success("✅ Data disabilitas berhasil disimpan.")
-            else:
-                st.warning("⚠️ Data disabilitas sudah ada — tidak disimpan ulang.")
-            
+            _simpan_tabel(conn, df_disabilitas_clean, 'detail_disabilitas', id_triwulan, 'disabilitas')
+
 def extract_triwulan_info(uploaded_file):
     try:
         # Baca baris atas dari sheet REKAPITULASI PDPB
@@ -344,39 +309,6 @@ def clean_and_map_disabilitas(df):
     
     return df_final
 
-def simpan_disabilitas_ke_database(engine, df_disabilitas_clean, id_triwulan):
-    """
-    Simpan data disabilitas dengan anti-duplikasi
-    """
-    with engine.begin() as conn:
-        # Cek duplikasi
-        existing = pd.read_sql(
-            text("SELECT id_triwulan FROM detail_disabilitas WHERE id_triwulan = :id"),
-            conn, params={"id": id_triwulan}
-        )
-        
-        if existing.empty:
-            # Tambahkan id_triwulan
-            df_disabilitas_clean['id_triwulan'] = id_triwulan
-            
-            # Simpan ke database
-            df_disabilitas_clean.to_sql('detail_disabilitas', conn, if_exists='append', index=False)
-            st.success("✅ Data disabilitas berhasil disimpan.")
-            
-            # Summary
-            total_disabilitas = (
-                df_disabilitas_clean['disabilitas_fisik'].sum() +
-                df_disabilitas_clean['disabilitas_intelektual'].sum() +
-                df_disabilitas_clean['disabilitas_mental'].sum() +
-                df_disabilitas_clean['disabilitas_sensorik_wicara'].sum() +
-                df_disabilitas_clean['disabilitas_sensorik_rungu'].sum() +
-                df_disabilitas_clean['disabilitas_sensorik_netra'].sum()
-            )
-            
-            st.info(f"📊 Total Pemilih Disabilitas: {int(total_disabilitas):,}")
-        else:
-            st.warning("⚠️ Data disabilitas sudah ada — tidak disimpan ulang.")
-            
 def display_home_overview(engine):
     # """
     # Menampilkan overview data tahunan dengan detail per triwulan
@@ -1946,7 +1878,7 @@ if uploaded_file:
         try:
             with st.spinner("Menghubungkan ke database dan memproses file..."):
 
-                # --- Ambil data triwulan ---
+                # --- 1. Ambil / buat ID Triwulan ---
                 triwulan_data = extract_triwulan_info(uploaded_file)
                 if not triwulan_data:
                     st.error("Tidak bisa melanjutkan tanpa data Triwulan yang valid.")
@@ -1957,100 +1889,49 @@ if uploaded_file:
                     st.error("Gagal mendapatkan ID Triwulan dari database.")
                     st.stop()
 
-                # --- PDPB (TRIWULAN SEBELUMNYA) ---
-                st.toast("Mencari sheet `PDPB sebelumnya`...")
                 xls = pd.ExcelFile(uploaded_file, engine="openpyxl")
-                
+
+                # --- 2. Baca & bersihkan semua sheet dulu (belum ada yang disimpan) ---
+
+                # PDPB Triwulan sebelumnya (sheet pertama)
                 first_sheet = xls.sheet_names[0]
-                
-                if first_sheet in xls.sheet_names:
-                    df_pdpb_t_raw = pd.read_excel(xls, sheet_name=first_sheet, header=0, engine='openpyxl')
-                    df_pdpb_t_clean = clean_and_map_pdpb_t2(df_pdpb_t_raw)
-                    df_pdpb_t_clean['id_triwulan'] = id_triwulan
-                    
-                    df_pdpb_t2_clean = df_pdpb_t_clean.drop(columns=['TOTAL'], errors='ignore')
-                    
-                    with engine.begin() as conn:
-                        try:
-                            # conn.execute(text("TRUNCATE TABLE triwulan_sebelumnya RESTART IDENTITY CASCADE;"))
-                            df_pdpb_t_clean.to_sql('triwulan_sebelumnya', conn, if_exists='append', index=False)
-                            st.toast(f"✅ {len(df_pdpb_t_clean)} baris data disimpan ke `triwulan_sebelumnya`.")
-                        except SQLAlchemyError as e:
-                            st.error(f"Gagal menyimpan ke `triwulan_sebelumnya`. Pastikan tabel ada. Error: {e}")
-                else:
-                    st.warning("Sheet PDPB Triwulan sebelumnya tidak ditemukan dalam file Excel.")
-                        
-                # --- REKAPITULASI PDPB ---
-                df_pdpb_raw = pd.read_excel(uploaded_file, sheet_name='REKAPITULASI PDPB', skiprows=9, engine='openpyxl')
+                df_pdpb_t_raw = pd.read_excel(xls, sheet_name=first_sheet, header=0, engine='openpyxl')
+                df_pdpb_t_clean = clean_and_map_pdpb_t2(df_pdpb_t_raw)
+                df_pdpb_t_clean['id_triwulan'] = id_triwulan
+
+                # Rekapitulasi PDPB
+                df_pdpb_raw = pd.read_excel(xls, sheet_name='REKAPITULASI PDPB', skiprows=9, engine='openpyxl')
                 df_pdpb_raw.rename(columns={'Jumlah Pemilih': 'L', 'Unnamed: 4': 'P', 'Unnamed: 5': 'L + P'}, inplace=True)
                 df_pdpb_raw = df_pdpb_raw.drop(df_pdpb_raw.index[0]).reset_index(drop=True)
                 df_pdpb_clean = clean_and_map_rekapitulasi_pdpb(df_pdpb_raw)
                 df_pdpb_clean['id_triwulan'] = id_triwulan
 
-                with engine.begin() as conn:
-                    # conn.execute(text("TRUNCATE TABLE rekapitulasi_pdpb RESTART IDENTITY CASCADE;"))
-                    # 1. Check apakah data sudah ada
-                    existing = pd.read_sql(
-                        text("SELECT id_triwulan FROM rekapitulasi_pdpb WHERE id_triwulan = :id"),
-                        conn, params={"id": id_triwulan}
-                    )
-                    
-                    # 2. Insert hanya jika BELUM ada
-                    if existing.empty:
-                        df_pdpb_clean.to_sql('rekapitulasi_pdpb', conn, if_exists='append', index=False)
-                        # st.toast("✅ Data disimpan")
-                        st.toast(f"✅ {len(df_pdpb_clean)} baris data disimpan ke `rekapitulasi_pdpb`.")
-                    else:
-                        st.warning("⚠️ Data rekapitulasi pdpb sudah ada — tidak disimpan ulang.")
-
-                # --- REKAP MODEL A ---
-                df_rekap_a_raw = pd.read_excel(uploaded_file, sheet_name='REKAP MODEL A', skiprows=8, engine='openpyxl')
+                # Rekap Model A
+                df_rekap_a_raw = pd.read_excel(xls, sheet_name='REKAP MODEL A', skiprows=8, engine='openpyxl')
                 df_rekap_a_clean = clean_and_map_rekap_model_a(df_rekap_a_raw)
                 df_rekap_a_clean['id_triwulan'] = id_triwulan
 
-                with engine.begin() as conn:
-                    # conn.execute(text("TRUNCATE TABLE rekap_model_a RESTART IDENTITY CASCADE;"))
-                    
-                    # 1. Check apakah data sudah ada
-                    existing = pd.read_sql(
-                        text("SELECT id_triwulan FROM rekap_model_a WHERE id_triwulan = :id"),
-                        conn, params={"id": id_triwulan}
-                    )
-                    
-                    # 2. Insert hanya jika BELUM ada
-                    if existing.empty:
-                        df_rekap_a_clean.to_sql('rekap_model_a', conn, if_exists='append', index=False)
-                        st.toast(f"✅ {len(df_rekap_a_clean)} baris data disimpan ke `rekap_model_a`.")
-                        # st.toast("✅ Data disimpan")
-                    else:
-                        st.warning("⚠️ Data rekap model A sudah ada — tidak disimpan ulang.")
-
-                # --- DB REKAP MODEL A ---
-                xls = pd.ExcelFile(uploaded_file, engine="openpyxl")
+                # DB Rekap Model A
                 df_db_rekap_raw = pd.read_excel(xls, sheet_name='DB REKAP MODEL A', header=[8, 9, 10])
                 df_db_rekap_clean = clean_and_map_db_rekap_model_a(df_db_rekap_raw)
                 df_db_rekap_clean['id_triwulan'] = id_triwulan
-                
-                # --- DETAIL DISABILITAS ---
+
+                # Detail Disabilitas (opsional, sheet SIDALIH WEB tidak selalu ada)
+                df_disabilitas_clean = None
                 try:
                     df_disabilitas_raw = pd.read_excel(
-                        uploaded_file,
+                        xls,
                         sheet_name='SIDALIH WEB',
-                        skiprows=141,  # Skip sampai row 142 (header ada di row 142)
+                        skiprows=141,  # header ada di row 142
                         header=0,
                         engine='openpyxl'
                     )
-                    
-                    # Clean dan map data disabilitas
                     df_disabilitas_clean = clean_and_map_disabilitas(df_disabilitas_raw)
-                    
+                    df_disabilitas_clean['id_triwulan'] = id_triwulan
+
                     st.success(f"✅ Data disabilitas berhasil dibaca: {len(df_disabilitas_clean)} kecamatan")
-                    
-                    # Preview data (optional)
                     with st.expander("📊 Preview Data Disabilitas"):
                         st.dataframe(df_disabilitas_clean, use_container_width=True)
-                        
-                        # Tampilkan total per kategori
                         col1, col2, col3 = st.columns(3)
                         with col1:
                             st.metric("Fisik", int(df_disabilitas_clean['disabilitas_fisik'].sum()))
@@ -2058,61 +1939,25 @@ if uploaded_file:
                             st.metric("Intelektual", int(df_disabilitas_clean['disabilitas_intelektual'].sum()))
                         with col3:
                             st.metric("Mental", int(df_disabilitas_clean['disabilitas_mental'].sum()))
-                    
                 except Exception as e:
                     st.warning(f"⚠️ Sheet SIDALIH WEB tidak ditemukan atau error: {e}")
                     st.info("💡 Data disabilitas akan dilewati. Pastikan sheet SIDALIH WEB ada di file Excel.")
-                    df_disabilitas_clean = None
 
-                if df_disabilitas_clean is not None and not df_disabilitas_clean.empty:
-                    df_disabilitas_clean['id_triwulan'] = id_triwulan
-                    
-                    with engine.begin() as conn:
-                        # Check duplikasi
-                        existing = pd.read_sql(
-                            text("SELECT id_triwulan FROM detail_disabilitas WHERE id_triwulan = :id"),
-                            conn, params={"id": id_triwulan}
-                        )
-                        
-                        # Insert hanya jika BELUM ada
-                        if existing.empty:
-                            df_disabilitas_clean.to_sql('detail_disabilitas', conn, if_exists='append', index=False)
-                            
-                            total_disabilitas = (
-                                df_disabilitas_clean['disabilitas_fisik'].sum() +
-                                df_disabilitas_clean['disabilitas_intelektual'].sum() +
-                                df_disabilitas_clean['disabilitas_mental'].sum() +
-                                df_disabilitas_clean['disabilitas_sensorik_wicara'].sum() +
-                                df_disabilitas_clean['disabilitas_sensorik_rungu'].sum() +
-                                df_disabilitas_clean['disabilitas_sensorik_netra'].sum()
-                            )
-                            
-                            st.toast(f"✅ {len(df_disabilitas_clean)} baris data disabilitas disimpan.")
-                            st.success(f"📊 Total Pemilih Disabilitas: **{int(total_disabilitas):,}**".replace(",", "."))
-                        else:
-                            st.warning("⚠️ Data disabilitas sudah ada — tidak disimpan ulang.")
-            
-                with engine.begin() as conn:
-                    # conn.execute(text("TRUNCATE TABLE db_rekap_model_a RESTART IDENTITY CASCADE;"))
-                    
-                    # 1. Check apakah data sudah ada
-                    existing = pd.read_sql(
-                        text("SELECT id_triwulan FROM db_rekap_model_a WHERE id_triwulan = :id"),
-                        conn, params={"id": id_triwulan}
-                    )
-                    
-                    # 2. Insert hanya jika BELUM ada
-                    if existing.empty:
-                        df_db_rekap_clean.to_sql('db_rekap_model_a', conn, if_exists='append', index=False)
-                        st.toast(f"✅ {len(df_db_rekap_clean)} baris data disimpan ke `db_rekap_model_a`.")
-                        # st.toast("✅ Data disimpan")
-                    else:
-                        st.warning("⚠️ Data db rekap model a sudah ada — tidak disimpan ulang.")
+                # --- 3. Simpan semua tabel dalam satu transaksi (anti-duplikasi) ---
+                simpan_ke_database(
+                    engine,
+                    df_pdpb_clean=df_pdpb_clean,
+                    df_triwulan_sebelumnya=df_pdpb_t_clean,
+                    df_rekap_model_a=df_rekap_a_clean,
+                    df_db_rekap_model_a=df_db_rekap_clean,
+                    df_disabilitas_clean=df_disabilitas_clean,
+                    id_triwulan=id_triwulan
+                )
 
-                # --- DATAFRAME ---
+                # --- 4. Preview hasil ---
                 st.subheader("PDPB TRIWULAN SEBELUMNYA")
                 st.dataframe(df_pdpb_t_clean)
-            
+
                 st.subheader("REKAPITULASI PDPB")
                 st.dataframe(df_pdpb_clean)
 
@@ -2121,7 +1966,7 @@ if uploaded_file:
 
                 st.subheader("DB REKAP MODEL A")
                 st.dataframe(df_db_rekap_clean)
-                
+
                 st.subheader("Data Disabilitas (Jika Tersedia)")
                 if df_disabilitas_clean is not None:
                     st.dataframe(df_disabilitas_clean)
@@ -2129,16 +1974,6 @@ if uploaded_file:
             st.success("🎉 Semua data berhasil disimpan dan terhubung dengan Triwulan.")
             st.balloons()
 
-            # --- SIMPAN KE REKAPITULASI PDPB (CEK DUPLIKAT) ---
-            existing = pd.read_sql(
-            text("SELECT id_triwulan FROM rekapitulasi_pdpb WHERE id_triwulan = :id"),
-            conn, params={"id": id_triwulan}
-            )
-            if existing.empty:
-                df_pdpb_clean.to_sql('rekapitulasi_pdpb', conn, if_exists='append', index=False)
-            else:
-                st.warning("Data untuk triwulan ini sudah ada di tabel rekapitulasi_pdpb.")
-                
         except Exception as e:
             st.error(f"Terjadi kesalahan: {e}")
             st.warning("Pastikan nama sheet dan format Excel sesuai.")
